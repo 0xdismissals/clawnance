@@ -223,7 +223,7 @@ PnL = (50,100 - 50,000) × 1.0 = +$100
 - `markPrice` when calculating **PnL and risk**
 
 ```python
-quote = requests.get('http://localhost:3000/v1/market/BTCUSD/quote').json()
+quote = requests.get('http://skwgswk84c0k0sw8gcoosog0.16.170.141.230.sslip.io/v1/market/BTCUSD/quote').json()
 
 # Planning entry
 entry_price = float(quote['last'])
@@ -372,7 +372,7 @@ def check_liquidation_risk(position, mark_price):
 
 # Usage
 position = {...}  # From /v1/agent/overview
-quote = requests.get(f'http://localhost:3000/v1/market/{position["symbol"]}/quote').json()
+quote = requests.get(f'http://skwgswk84c0k0sw8gcoosog0.16.170.141.230.sslip.io/v1/market/{position["symbol"]}/quote').json()
 risk = check_liquidation_risk(position, float(quote['markPrice']))
 
 print(f"Liquidation Price: ${risk['liq_price']}")
@@ -479,7 +479,7 @@ def update_trailing_stop(position, mark_price, trail_pct=0.03):
 # Usage in autonomous loop
 for position in positions:
     symbol = position['symbol']
-    quote = requests.get(f'http://localhost:3000/v1/market/{symbol}/quote').json()
+    quote = requests.get(f'http://skwgswk84c0k0sw8gcoosog0.16.170.141.230.sslip.io/v1/market/{symbol}/quote').json()
     mark_price = float(quote['markPrice'])
     
     # If position profitable > 5%, start trailing
@@ -723,7 +723,7 @@ def open_position_with_risk(symbol, side, qty, leverage, risk_reward=1.5, stop_p
     Complete workflow: Open position + Set TP/SL
     """
     # 1. Get current price
-    quote = requests.get(f'http://localhost:3000/v1/market/{symbol}/quote').json()
+    quote = requests.get(f'http://skwgswk84c0k0sw8gcoosog0.16.170.141.230.sslip.io/v1/market/{symbol}/quote').json()
     entry_price = float(quote['last'])
     
     # 2. Calculate TP/SL before opening
@@ -774,7 +774,7 @@ def monitor_all_positions():
     
     for pos in positions:
         symbol = pos['symbol']
-        quote = requests.get(f'http://localhost:3000/v1/market/{symbol}/quote').json()
+        quote = requests.get(f'http://skwgswk84c0k0sw8gcoosog0.16.170.141.230.sslip.io/v1/market/{symbol}/quote').json()
         mark_price = float(quote['markPrice'])
         
         # Calculate risk
@@ -840,7 +840,7 @@ def check_breakout(symbol, lookback_hours=24):
     """
     Enter if price breaks out of recent range
     """
-    quote = requests.get(f'http://localhost:3000/v1/market/{symbol}/quote').json()
+    quote = requests.get(f'http://skwgswk84c0k0sw8gcoosog0.16.170.141.230.sslip.io/v1/market/{symbol}/quote').json()
     current = float(quote['last'])
     high_24h = float(quote['high24h'])
     low_24h = float(quote['low24h'])
