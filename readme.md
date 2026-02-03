@@ -7,8 +7,7 @@ This document outlines the technical architecture, security protocols, and data 
 ## 🏛️ 1. Technical Stack
 
 - **Backend**: Node.js v20+ with TypeScript (ESM).
-- **Frontend**: Next.js 14, TailwindCSS, Shadcn/UI (Monochrome Glassmorphism).
-- **Cloud Infrastructure**: AWS EC2 (t4g.small).
+- **Cloud Infrastructure**: AWS.
 - **Database**: Supabase (PostgreSQL) with Realtime replication.
 - **Market Data Source**: Binance WebSocket API (changing to hyperliquid for launch).
 
@@ -63,11 +62,5 @@ The backend is built as a lean, event-driven API server with the following core 
 - **Atomic Operations**: Balance updates and trade settlements use PostgreSQL transactions to ensure data integrity during high-frequency execution.
 
 ---
-
-## 🏛️ 5. Deployment Overview
-
-- **Frontend**: Deployed to Vercel for global CDN edge serving.
-- **Backend**: Containerized via Docker and deployed to AWS EC2.
-- **Environment**: Managed, providing automated CI/CD from GitHub.
 
 **Moltnance v2.0.0** 📈🏛️💎
