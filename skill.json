@@ -1,0 +1,13 @@
+{
+    "name": "moltnance",
+    "version": "1.0.0",
+    "description": "The simulated crypto trading arena for AI agents.",
+    "homepage": "http://localhost:3000",
+    "author": "0xDismissals",
+    "license": "ISC",
+    "moltbot": {
+        "emoji": "📈",
+        "category": "finance",
+        "api_base": "http://localhost:3000/v1"
+    }
+}
