@@ -5,6 +5,7 @@ import { MarketState } from '../market/state.js';
 import { Decimal } from 'decimal.js';
 import { TradingEngine } from '../engine/index.js';
 import crypto from 'crypto';
+import { generatePnLCard, generateOverviewCard, PnLCardData, OverviewCardData } from '../utils/share-cards/index.js';
 
 const router = Router();
 const marketState = MarketState.getInstance();
@@ -16,8 +17,8 @@ router.post('/agents/register', async (req, res) => {
     }
 
     // Server-side Device ID generation (IP-anchored to prevent tampering)
-    const salt = process.env.DEVICE_SALT || 'moltnance-secure-salt-v1';
-    const ip = req.ip || '127.0.0.1';
+    const salt = process.env.DEVICE_SALT || 'clawnance-secure-salt-v1';
+    const ip = req.ip || '127.00.1';
     const deviceId = crypto.createHash('sha256').update(ip + salt).digest('hex');
 
     const agentId = `agent_${name.toLowerCase().replace(/\s+/g, '_')}`;
@@ -260,6 +261,113 @@ router.post('/orders/:id/cancel', async (req: any, res) => {
     if (error) return res.status(500).json({ error: error.message });
     if (!data || data.length === 0) return res.status(404).json({ error: 'Order not found or already filled/canceled' });
     res.json({ success: true, order: data[0] });
+});
+
+router.get('/positions/:id/share', async (req: any, res) => {
+    const { id } = req.params;
+
+    // Check active positions first
+    let { data: pos, error } = await supabase
+        .from('positions')
+        .select('*')
+        .eq('id', id)
+        .eq('agent_id', req.agentId)
+        .single();
+
+    // If not found, check closed trades
+    if (error || !pos) {
+        const { data: trade, error: tradeErr } = await supabase
+            .from('trades')
+            .select('*')
+            .eq('id', id)
+            .eq('agent_id', req.agentId)
+            .single();
+
+        if (tradeErr || !trade) return res.status(404).json({ error: 'Position not found' });
+
+        // Map trade to share data
+        const cardData: PnLCardData = {
+            symbol: trade.symbol,
+            side: trade.side,
+            leverage: trade.leverage,
+            pnlUsd: trade.realized_pnl,
+            pnlPercent: (trade.realized_pnl / ((trade.qty * trade.entry_price) / trade.leverage)) * 100,
+            entryPrice: trade.entry_price,
+            markPrice: trade.close_price,
+            agentName: req.agentName || 'Clawnance Agent'
+        };
+        const png = await generatePnLCard(cardData);
+        res.header('Content-Type', 'image/png').send(png);
+        return;
+    }
+
+    // Map active position to share data
+    const cardData: PnLCardData = {
+        symbol: pos.symbol,
+        side: pos.side,
+        leverage: pos.leverage,
+        pnlUsd: pos.unrealized_pnl_usd,
+        pnlPercent: (pos.unrealized_pnl_usd / ((pos.qty * pos.entry_price) / pos.leverage)) * 100,
+        entryPrice: pos.entry_price,
+        markPrice: pos.mark_price,
+        agentName: req.agentName || 'Clawnance Agent'
+    };
+    const png = await generatePnLCard(cardData);
+    res.header('Content-Type', 'image/png').send(png);
+});
+
+router.get('/overview/share', async (req: any, res) => {
+    // 1. Fetch agent, wallet, and active positions
+    const [agentRes, walletRes, positionsRes, tradesRes] = await Promise.all([
+        supabase.from('agents').select('name').eq('id', req.agentId).single(),
+        supabase.from('wallets').select('*').eq('agent_id', req.agentId).single(),
+        supabase.from('positions').select('*').eq('agent_id', req.agentId).eq('status', 'active'),
+        supabase.from('trades').select('realized_pnl, qty, entry_price').eq('agent_id', req.agentId)
+    ]);
+
+    if (agentRes.error || !agentRes.data) return res.status(404).json({ error: 'Agent not found' });
+    if (walletRes.error) return res.status(500).json({ error: walletRes.error.message });
+
+    const agent = agentRes.data;
+    const wallet = walletRes.data;
+    const positions = positionsRes.data || [];
+    const trades = tradesRes.data || [];
+
+    // 2. Calculate live unrealized PnL and equity
+    let totalUnrealizedPnL = new Decimal(0);
+    positions.forEach(pos => {
+        const quote = marketState.getQuote(pos.symbol);
+        const currentPrice = quote ? quote.last : new Decimal(pos.mark_price || 0);
+
+        const entry = new Decimal(pos.entry_price);
+        const qty = new Decimal(pos.qty);
+        const upnl = pos.side === 'long'
+            ? currentPrice.minus(entry).times(qty)
+            : entry.minus(currentPrice).times(qty);
+        totalUnrealizedPnL = totalUnrealizedPnL.plus(upnl);
+    });
+    const liveEquity = new Decimal(wallet.balance_usd).plus(totalUnrealizedPnL);
+
+    // 3. Calculate trade statistics
+    const realizedTotal = trades.reduce((acc: number, t: any) => acc + (t.realized_pnl || 0), 0);
+    const totalVolume = trades.reduce((acc: number, t: any) => acc + (Number(t.qty) * Number(t.entry_price)), 0);
+    const winningTrades = trades.filter((t: any) => t.realized_pnl > 0).length;
+    const totalTrades = trades.length;
+    const winRate = totalTrades > 0 ? Math.round((winningTrades / totalTrades) * 100) : 0;
+
+    const cardData: OverviewCardData = {
+        agentName: agent.name,
+        equityUsd: liveEquity.toNumber(),
+        realizedPnL: realizedTotal,
+        unrealizedPnL: totalUnrealizedPnL.toNumber(),
+        winRate: winRate,
+        totalTrades: totalTrades,
+        totalVolume: totalVolume,
+        activePositions: positions.length
+    };
+
+    const png = await generateOverviewCard(cardData);
+    res.header('Content-Type', 'image/png').send(png);
 });
 
 router.post('/positions/:symbol/close', async (req: any, res) => {

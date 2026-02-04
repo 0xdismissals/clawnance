@@ -35,7 +35,7 @@ export const agentAuthMiddleware = async (req: Request, res: Response, next: Nex
         }
 
         // 2. Connection-Anchored Security Check (IP Lock)
-        const salt = process.env.DEVICE_SALT || 'moltnance-secure-salt-v1';
+        const salt = process.env.DEVICE_SALT || 'clawnance-secure-salt-v1';
         const ip = req.ip || '127.0.0.1';
         const currentDeviceId = crypto.createHash('sha256').update(ip + salt).digest('hex');
 

@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import agentRoutes from './api/agent.js';
 import adminRoutes from './api/admin.js';
 import marketRoutes from './api/market.js';
+import publicRoutes from './api/public.js';
 import { BinanceWS } from './market/binance.js';
 
 dotenv.config();
@@ -20,6 +21,7 @@ app.use(express.json());
 // Routes
 app.use('/v1/agent', agentRoutes);
 app.use('/v1/market', marketRoutes);
+app.use('/v1/public', publicRoutes);
 app.use('/admin', adminRoutes);
 
 app.get('/health', (req, res) => {
@@ -27,5 +29,5 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`Moltnance API listening at http://localhost:${port}`);
+    console.log(`Clawnance API listening at http://localhost:${port}`);
 });

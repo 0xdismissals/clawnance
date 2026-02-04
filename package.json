@@ -1,5 +1,5 @@
 {
-  "name": "moltnance",
+  "name": "clawnance",
   "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
@@ -22,11 +22,16 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@supabase/supabase-js": "^2.93.3",
+    "@types/react-dom": "^19.2.3",
     "axios": "^1.13.4",
     "decimal.js": "^10.6.0",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "lucide-react": "^0.563.0",
+    "react-dom": "^19.2.4",
+    "satori": "^0.19.1",
     "tweetnacl": "^1.0.3",
     "ws": "^8.19.0"
   }
