@@ -7,23 +7,43 @@ import React from 'react';
 // Load assets with robust pathing and error handling
 const rootDir = process.cwd();
 
-let interBold: Buffer;
-let interRegular: Buffer;
-let pnlBg: string;
-let overviewBg: string;
+function loadFont(fontName: string): Buffer {
+    const extensions = ['.ttf', '.otf'];
+    const possiblePaths = [
+        join(rootDir, 'src/assets/fonts'),
+        join(rootDir, 'assets/fonts'), // Backup for some deployments
+        join(rootDir, 'dist/assets/fonts'), // Backup for built versions
+    ];
+
+    for (const basePath of possiblePaths) {
+        for (const ext of extensions) {
+            try {
+                const fullPath = join(basePath, fontName + ext);
+                const data = readFileSync(fullPath);
+                if (data.length > 5000) { // Real fonts are usually > 5k
+                    console.log(`[Assets] Loaded font: ${fontName}${ext} from ${fullPath} (${data.length} bytes)`);
+                    return data;
+                }
+            } catch (err) {
+                // Ignore and try next
+            }
+        }
+    }
+    console.warn(`[Assets] Could not find or load font: ${fontName}`);
+    return Buffer.alloc(0);
+}
+
+const interBold = loadFont('Inter-Bold');
+const interRegular = loadFont('Inter-Regular');
+
+let pnlBg: string = '';
+let overviewBg: string = '';
 
 try {
-    interBold = readFileSync(join(rootDir, 'src/assets/fonts/Inter-Bold.ttf'));
-    interRegular = readFileSync(join(rootDir, 'src/assets/fonts/Inter-Regular.ttf'));
     pnlBg = readFileSync(join(rootDir, 'src/assets/pnl_bg.JPG')).toString('base64');
     overviewBg = readFileSync(join(rootDir, 'src/assets/overview_bg.JPG')).toString('base64');
 } catch (err) {
-    console.error('[Assets] Failed to load share card assets:', err);
-    // Fallback or empty values to prevent total crash on module load
-    interBold = Buffer.alloc(0);
-    interRegular = Buffer.alloc(0);
-    pnlBg = '';
-    overviewBg = '';
+    console.error('[Assets] Failed to load share card background images:', err);
 }
 
 export interface PnLCardData {
@@ -154,10 +174,10 @@ export async function generatePnLCard(data: PnLCardData): Promise<Buffer> {
         {
             width: 800,
             height: 800,
-            fonts: [
+            fonts: interBold.length > 0 && interRegular.length > 0 ? [
                 { name: 'Inter', data: interBold, weight: 700 },
                 { name: 'Inter', data: interRegular, weight: 400 },
-            ],
+            ] : [],
         }
     );
 
@@ -269,10 +289,10 @@ export async function generateOverviewCard(data: OverviewCardData): Promise<Buff
         {
             width: 800,
             height: 800,
-            fonts: [
+            fonts: interBold.length > 0 && interRegular.length > 0 ? [
                 { name: 'Inter', data: interBold, weight: 700 },
                 { name: 'Inter', data: interRegular, weight: 400 },
-            ],
+            ] : [],
         }
     );
 
