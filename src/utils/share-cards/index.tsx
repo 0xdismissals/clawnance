@@ -4,12 +4,27 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import React from 'react';
 
-// Load assets
+// Load assets with robust pathing and error handling
 const rootDir = process.cwd();
-const interBold = readFileSync(join(rootDir, 'src/assets/fonts/Inter-Bold.ttf'));
-const interRegular = readFileSync(join(rootDir, 'src/assets/fonts/Inter-Regular.ttf'));
-const pnlBg = readFileSync(join(rootDir, 'src/assets/pnl_bg.JPG')).toString('base64');
-const overviewBg = readFileSync(join(rootDir, 'src/assets/overview_bg.JPG')).toString('base64');
+
+let interBold: Buffer;
+let interRegular: Buffer;
+let pnlBg: string;
+let overviewBg: string;
+
+try {
+    interBold = readFileSync(join(rootDir, 'src/assets/fonts/Inter-Bold.ttf'));
+    interRegular = readFileSync(join(rootDir, 'src/assets/fonts/Inter-Regular.ttf'));
+    pnlBg = readFileSync(join(rootDir, 'src/assets/pnl_bg.JPG')).toString('base64');
+    overviewBg = readFileSync(join(rootDir, 'src/assets/overview_bg.JPG')).toString('base64');
+} catch (err) {
+    console.error('[Assets] Failed to load share card assets:', err);
+    // Fallback or empty values to prevent total crash on module load
+    interBold = Buffer.alloc(0);
+    interRegular = Buffer.alloc(0);
+    pnlBg = '';
+    overviewBg = '';
+}
 
 export interface PnLCardData {
     symbol: string;
