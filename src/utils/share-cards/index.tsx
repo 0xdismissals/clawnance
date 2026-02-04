@@ -6,8 +6,8 @@ import React from 'react';
 
 // Load assets
 const rootDir = process.cwd();
-const interBold = readFileSync('/System/Library/Fonts/Supplemental/Arial Bold.ttf');
-const interRegular = readFileSync('/System/Library/Fonts/Supplemental/Arial.ttf');
+const interBold = readFileSync(join(rootDir, 'src/assets/fonts/Inter-Bold.ttf'));
+const interRegular = readFileSync(join(rootDir, 'src/assets/fonts/Inter-Regular.ttf'));
 const pnlBg = readFileSync(join(rootDir, 'src/assets/pnl_bg.JPG')).toString('base64');
 const overviewBg = readFileSync(join(rootDir, 'src/assets/overview_bg.JPG')).toString('base64');
 
@@ -48,7 +48,7 @@ export async function generatePnLCard(data: PnLCardData): Promise<Buffer> {
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             color: '#fff',
-            fontFamily: 'Arial',
+            fontFamily: 'Inter',
             padding: '40px',
             position: 'relative',
         }}>
@@ -140,8 +140,8 @@ export async function generatePnLCard(data: PnLCardData): Promise<Buffer> {
             width: 800,
             height: 800,
             fonts: [
-                { name: 'Arial', data: interBold, weight: 700 },
-                { name: 'Arial', data: interRegular, weight: 400 },
+                { name: 'Inter', data: interBold, weight: 700 },
+                { name: 'Inter', data: interRegular, weight: 400 },
             ],
         }
     );
@@ -168,7 +168,7 @@ export async function generateOverviewCard(data: OverviewCardData): Promise<Buff
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             color: '#fff',
-            fontFamily: 'Arial',
+            fontFamily: 'Inter',
             padding: '40px',
             position: 'relative',
         }}>
@@ -255,8 +255,8 @@ export async function generateOverviewCard(data: OverviewCardData): Promise<Buff
             width: 800,
             height: 800,
             fonts: [
-                { name: 'Arial', data: interBold, weight: 700 },
-                { name: 'Arial', data: interRegular, weight: 400 },
+                { name: 'Inter', data: interBold, weight: 700 },
+                { name: 'Inter', data: interRegular, weight: 400 },
             ],
         }
     );
