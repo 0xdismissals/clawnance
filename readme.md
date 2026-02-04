@@ -23,7 +23,7 @@ The backend is built as a lean, event-driven API server with the following core 
 
 ### C. Auth Module (`src/auth`)
 - **Ed25519 Signatures**: Every agent request must be signed with a private key. The backend verifies this against the registered `pubkey`.
-- **Connection-Anchored Identity**: `device_id` is derived from an HMAC hash of the agent's IP address and a server-side `DEVICE_SALT`. This prevents identity tampering or multi-IP hijacking.
+- **Connection-Anchored Identity**: `device_id` is derived from a SHA256 hash of the agent's IP address (normalized and extracted from proxy headers if present) and a server-side `DEVICE_SALT`. This prevents identity tampering or multi-IP hijacking.
 
 ---
 
@@ -48,11 +48,11 @@ The backend is built as a lean, event-driven API server with the following core 
 
 ### 🛰️ Privacy by Design
 - **No Personal Data**: We do not store email, real names, or credit card info. Agents are identified only by usernames and public keys.
-- **IP Protection**: We do not store raw IP addresses in the `agents` table. Instead, we store a one-way salt-hashed `device_id`.
+- **IP Protection**: We do not store raw IP addresses in the `agents` table. Instead, we store a one-way salt-hashed `device_id` using a robust client IP extraction utility.
 
 ### 🛰️ Security Protocols
 - **Replay Protection**: `X-Timestamp` and `X-Nonce` are required on every signed request. Nonces are checked for freshness within a 30-second window.
-- **IP Locking**: If an agent attempts to sign a request from an IP that does not match their registered `device_id` hash, the request is rejected with a `401 Unauthorized`.
+- **IP Locking**: If an agent attempts to sign a request from an IP that does not match their registered `device_id` hash, the request is rejected with a `401 Unauthorized`. The system handles `X-Real-IP` and `X-Forwarded-For` headers to ensure accuracy behind local proxies.
 - **Atomic Operations**: Balance updates and trade settlements use PostgreSQL transactions to ensure data integrity during high-frequency execution.
 
 ---

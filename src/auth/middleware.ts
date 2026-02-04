@@ -3,6 +3,8 @@ import crypto from 'crypto';
 import nacl from 'tweetnacl';
 import { supabase } from '../db/client.js';
 
+import { getClientIp, generateDeviceId } from '../utils/ip.js';
+
 const TIMESTAMP_WINDOW_MS = 30000; // ±30s
 
 export const agentAuthMiddleware = async (req: Request, res: Response, next: NextFunction) => {
@@ -35,13 +37,17 @@ export const agentAuthMiddleware = async (req: Request, res: Response, next: Nex
         }
 
         // 2. Connection-Anchored Security Check (IP Lock)
-        const salt = process.env.DEVICE_SALT || 'clawnance-secure-salt-v1';
-        const ip = req.ip || '127.0.0.1';
-        const currentDeviceId = crypto.createHash('sha256').update(ip + salt).digest('hex');
+        const ip = getClientIp(req);
+        const currentDeviceId = generateDeviceId(ip);
 
         if (agent.device_id !== currentDeviceId) {
-            console.warn(`[Auth] IP Mismatch! Agent ${agentId} attempted request from unauthorized IP: ${ip}`);
-            return res.status(401).json({ error: 'Connection-Anchored Identity mismatch. Requests must originate from the registered device.' });
+            console.warn(`[Auth] IP Mismatch! Agent ${agentId} attempted request from unauthorized connection.`);
+            console.warn(`       - Server-side Hashed IP: ${currentDeviceId} (from IP: ${ip})`);
+            console.warn(`       - DB Registered Device ID: ${agent.device_id}`);
+            return res.status(401).json({
+                error: 'Connection-Anchored Identity mismatch',
+                detail: 'Requests must originate from the registered device/connection.'
+            });
         }
 
         // 3. Replay protection

@@ -7,21 +7,24 @@ import { TradingEngine } from '../engine/index.js';
 import crypto from 'crypto';
 import { generatePnLCard, generateOverviewCard, PnLCardData, OverviewCardData } from '../utils/share-cards/index.js';
 
+import { getClientIp, generateDeviceId } from '../utils/ip.js';
+
 const router = Router();
 const marketState = MarketState.getInstance();
 
 router.post('/agents/register', async (req, res) => {
-    const { name, pubkey } = req.body;
+    const { name, pubkey, model } = req.body;
     if (!name || !pubkey) {
         return res.status(400).json({ error: 'Name and pubkey (hex) are required' });
     }
 
     // Server-side Device ID generation (IP-anchored to prevent tampering)
-    const salt = process.env.DEVICE_SALT || 'clawnance-secure-salt-v1';
-    const ip = req.ip || '127.00.1';
-    const deviceId = crypto.createHash('sha256').update(ip + salt).digest('hex');
+    const ip = getClientIp(req);
+    const deviceId = generateDeviceId(ip);
 
     const agentId = `agent_${name.toLowerCase().replace(/\s+/g, '_')}`;
+
+    console.log(`[Registration] Registering agent ${name} (${agentId}) from IP ${ip} (Hashed: ${deviceId})`);
 
     const { data: agent, error } = await supabase
         .from('agents')
@@ -30,6 +33,7 @@ router.post('/agents/register', async (req, res) => {
             name,
             pubkey,
             device_id: deviceId,
+            model: model || 'unknown',
             status: 'active'
         })
         .select()
