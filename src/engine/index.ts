@@ -6,6 +6,8 @@ import { EngineCalculator } from './calculator.js';
 export class TradingEngine {
     private static instance: TradingEngine;
     private marketState = MarketState.getInstance();
+    private activePositions: Map<string, any[]> = new Map();
+    private initialized = false;
 
     private constructor() { }
 
@@ -16,18 +18,64 @@ export class TradingEngine {
         return TradingEngine.instance;
     }
 
+    public async syncPosition(pos: any) {
+        await this.ensureInitialized();
+        const list = this.activePositions.get(pos.symbol) || [];
+        const idx = list.findIndex(p => p.id === pos.id);
+        if (pos.status === 'active') {
+            if (idx !== -1) {
+                list[idx] = pos;
+            } else {
+                list.push(pos);
+            }
+        } else {
+            if (idx !== -1) {
+                list.splice(idx, 1);
+            }
+        }
+        this.activePositions.set(pos.symbol, list);
+    }
+
+    private async ensureInitialized() {
+        if (this.initialized) return;
+
+        console.log('[Engine] Initializing active positions cache...');
+        const { data: positions, error } = await supabase
+            .from('positions')
+            .select('*')
+            .eq('status', 'active');
+
+        if (error) {
+            console.error('[Engine] Failed to load active positions:', error);
+            return;
+        }
+
+        // Reset and fill cache
+        this.activePositions.clear();
+        (positions || []).forEach(pos => {
+            const list = this.activePositions.get(pos.symbol) || [];
+            list.push(pos);
+            this.activePositions.set(pos.symbol, list);
+        });
+
+        this.initialized = true;
+        console.log(`[Engine] Cached ${positions?.length || 0} active positions.`);
+    }
+
     /**
      * Main entry point for price ticks.
      * Processes limit orders and TP/SL for a given symbol.
      */
     public async onTick(symbol: string) {
+        await this.ensureInitialized();
+
         const quote = this.marketState.getQuote(symbol);
         if (!quote) return;
 
-        // 1. Process Limit Orders
+        // 1. Process Limit Orders (Still DB-bound for now as they are less frequent)
         await this.processLimitOrders(symbol, quote);
 
-        // 2. Process TP/SL and Liquidations
+        // 2. Process TP/SL and Liquidations (Using Cache)
         await this.processRiskTriggers(symbol, quote);
     }
 
@@ -65,38 +113,53 @@ export class TradingEngine {
     }
 
     private async processRiskTriggers(symbol: string, quote: any) {
-        // Fetch active positions for this symbol
-        const { data: positions } = await supabase
-            .from('positions')
-            .select('*')
-            .eq('symbol', symbol)
-            .eq('status', 'active');
+        const positions = this.activePositions.get(symbol);
+        if (!positions || positions.length === 0) return;
 
-        if (!positions) return;
+        // We iterate over a copy because executeClose/updatePositionPnL might modify the cache
+        const positionsToProcess = [...positions];
 
-        for (const pos of positions) {
-            const markPrice = quote.last;
+        for (const pos of positionsToProcess) {
+            const markPrice = quote.markPrice.isZero() ? quote.last : quote.markPrice;
+            const lastPrice = quote.last;
             let shouldClose = false;
+            let closePrice = markPrice;
 
             // Check TP/SL
+            // Best practice: TP is usually checked against Mark or Last depending on exchange.
+            // We'll check against Last for TP/SL and Mark for Liquidation.
             if (pos.side === 'long') {
-                if (pos.take_profit_price && markPrice.gte(pos.take_profit_price)) shouldClose = true;
-                if (pos.stop_loss_price && markPrice.lte(pos.stop_loss_price)) shouldClose = true;
+                if (pos.take_profit_price && lastPrice.gte(pos.take_profit_price)) {
+                    shouldClose = true;
+                    closePrice = lastPrice;
+                }
+                if (pos.stop_loss_price && lastPrice.lte(pos.stop_loss_price)) {
+                    shouldClose = true;
+                    closePrice = lastPrice;
+                }
             } else {
-                if (pos.take_profit_price && markPrice.lte(pos.take_profit_price)) shouldClose = true;
-                if (pos.stop_loss_price && markPrice.gte(pos.stop_loss_price)) shouldClose = true;
+                if (pos.take_profit_price && lastPrice.lte(pos.take_profit_price)) {
+                    shouldClose = true;
+                    closePrice = lastPrice;
+                }
+                if (pos.stop_loss_price && lastPrice.gte(pos.stop_loss_price)) {
+                    shouldClose = true;
+                    closePrice = lastPrice;
+                }
             }
 
-            // Check Liquidation (Simplified)
-            // liq_price is stored on position record
+            // Check Liquidation (Against Mark Price)
             if ((pos.side === 'long' && markPrice.lte(pos.liq_price)) ||
                 (pos.side === 'short' && markPrice.gte(pos.liq_price))) {
                 shouldClose = true;
+                closePrice = markPrice;
             }
 
             if (shouldClose) {
-                await this.executeClose(pos, markPrice);
+                console.log(`[Engine] CRITICAL: Triggering close for ${pos.symbol} ${pos.side} at ${closePrice}`);
+                await this.executeClose(pos, closePrice);
             } else {
+                // Update PnL every tick (throttled updates to DB happen inside updatePositionPnL)
                 await this.updatePositionPnL(pos, markPrice);
             }
         }
@@ -186,7 +249,7 @@ export class TradingEngine {
 
         const liqPrice = EngineCalculator.calculateLiqPrice(side as any, fillPrice, leverage);
 
-        await supabase.from('positions').insert({
+        const { data: newPos, error: posError } = await supabase.from('positions').insert({
             agent_id,
             symbol,
             side,
@@ -195,7 +258,13 @@ export class TradingEngine {
             leverage,
             liq_price: liqPrice.toNumber(),
             updated_at: new Date().toISOString()
-        });
+        }).select().single();
+
+        if (newPos) {
+            const list = this.activePositions.get(symbol) || [];
+            list.push(newPos);
+            this.activePositions.set(symbol, list);
+        }
     }
 
     private async settlePartial(pos: any, qtyToClose: Decimal, closePrice: Decimal, realPnL: Decimal) {
@@ -216,10 +285,18 @@ export class TradingEngine {
             updated_at: new Date().toISOString()
         }).eq('agent_id', agent_id);
 
-        await supabase.from('positions').update({
+        const { data: updatedPos } = await supabase.from('positions').update({
             qty: new Decimal(pos.qty).minus(qtyToClose).toNumber(),
             updated_at: new Date().toISOString()
-        }).eq('id', pos.id);
+        }).eq('id', pos.id).select().single();
+
+        if (updatedPos) {
+            const list = this.activePositions.get(pos.symbol) || [];
+            const idx = list.findIndex(p => p.id === pos.id);
+            if (idx !== -1) {
+                list[idx] = updatedPos;
+            }
+        }
 
         // Record the trade history for the partial close
         await supabase.from('trades').insert({
@@ -257,12 +334,20 @@ export class TradingEngine {
 
         const newLiqPrice = EngineCalculator.calculateLiqPrice(pos.side, newEntry, leverage);
 
-        await supabase.from('positions').update({
+        const { data: updatedPos } = await supabase.from('positions').update({
             qty: totalQty.toNumber(),
             entry_price: newEntry.toNumber(),
             liq_price: newLiqPrice.toNumber(),
             updated_at: new Date().toISOString()
-        }).eq('id', pos.id);
+        }).eq('id', pos.id).select().single();
+
+        if (updatedPos) {
+            const list = this.activePositions.get(pos.symbol) || [];
+            const idx = list.findIndex(p => p.id === pos.id);
+            if (idx !== -1) {
+                list[idx] = updatedPos;
+            }
+        }
     }
 
     public async executeClose(pos: any, closePrice: Decimal) {
@@ -275,7 +360,34 @@ export class TradingEngine {
         const initialMargin = qtyDec.times(entryPriceDec).div(leverage);
 
         try {
-            // 1. Update Wallet
+            // 1. Mark Position as CLOSED (ATOMIC CHECK)
+            // Use status='active' as a guard to prevent race conditions
+            const { data: closedPos, error: updateError } = await supabase.from('positions')
+                .update({
+                    status: 'closed',
+                    close_price: closePriceDec.toNumber(),
+                    realized_pnl: realPnL.toNumber(),
+                    closed_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', pos.id)
+                .eq('status', 'active')
+                .select()
+                .maybeSingle();
+
+            if (updateError || !closedPos) {
+                console.warn(`[Engine] Position ${pos.id} already closed or failed to update. skipping.`);
+                // Remove from cache if it was there
+                const list = this.activePositions.get(symbol) || [];
+                this.activePositions.set(symbol, list.filter(p => p.id !== pos.id));
+                return;
+            }
+
+            // 2. Update Cache
+            const list = this.activePositions.get(symbol) || [];
+            this.activePositions.set(symbol, list.filter(p => p.id !== pos.id));
+
+            // 3. Update Wallet
             const { data: wallet } = await supabase.from('wallets').select('*').eq('agent_id', agent_id).single();
             if (!wallet) throw new Error('Wallet not found');
 
@@ -289,15 +401,6 @@ export class TradingEngine {
                 used_margin_usd: newUsedMargin.toNumber(),
                 updated_at: new Date().toISOString()
             }).eq('agent_id', agent_id);
-
-            // 2. Mark Position as CLOSED
-            await supabase.from('positions').update({
-                status: 'closed',
-                close_price: closePriceDec.toNumber(),
-                realized_pnl: realPnL.toNumber(),
-                closed_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            }).eq('id', pos.id);
 
             // 3. Insert into Permanent Trades History
             await supabase.from('trades').insert({
@@ -326,9 +429,25 @@ export class TradingEngine {
         }
     }
 
+    private lastPnLUpdate: Map<string, number> = new Map();
     private async updatePositionPnL(pos: any, markPrice: Decimal) {
+        const now = Date.now();
+        const last = this.lastPnLUpdate.get(pos.id) || 0;
+
+        // Update local cache EVERY tick
         const markPriceDec = new Decimal(markPrice);
         const upnl = EngineCalculator.calculateUPnL(pos.side, new Decimal(pos.qty), new Decimal(pos.entry_price), markPriceDec);
+
+        const list = this.activePositions.get(pos.symbol) || [];
+        const cachedPos = list.find(p => p.id === pos.id);
+        if (cachedPos) {
+            cachedPos.mark_price = markPriceDec.toDecimalPlaces(4, Decimal.ROUND_HALF_UP).toNumber();
+            cachedPos.unrealized_pnl_usd = upnl.toNumber();
+        }
+
+        // Throttled update to DB (every 5 seconds)
+        if (now - last < 5000) return;
+        this.lastPnLUpdate.set(pos.id, now);
 
         await supabase.from('positions').update({
             mark_price: markPriceDec.toDecimalPlaces(4, Decimal.ROUND_HALF_UP).toNumber(),

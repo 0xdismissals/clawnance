@@ -75,9 +75,11 @@ export class BinanceWS {
                     this.marketState.updateQuote(symbol, {
                         markPrice: new Decimal(eventData.p).toDecimalPlaces(4, Decimal.ROUND_HALF_UP),
                         indexPrice: new Decimal(eventData.i).toDecimalPlaces(4, Decimal.ROUND_HALF_UP),
-                        fundingRate: new Decimal(eventData.r).toDecimalPlaces(8, Decimal.ROUND_HALF_UP), // Funding usually needs more precision, but rounding prices
+                        fundingRate: new Decimal(eventData.r).toDecimalPlaces(8, Decimal.ROUND_HALF_UP),
                         ts: eventData.E
                     });
+                    // Mark price updates are critical for Risk (Liq/PnL)
+                    TradingEngine.getInstance().onTick(symbol).catch(err => console.error(`Engine tick failed for ${symbol}:`, err));
                 } else if (eventData.e === 'aggTrade') {
                     this.marketState.updateQuote(symbol, {
                         recentTrades: [{
@@ -87,6 +89,8 @@ export class BinanceWS {
                             m: eventData.m
                         }]
                     });
+                    // Throttled onTick for trades to ensure Limit Orders/TP hit fast but don't overwhelm
+                    this.triggerTradeTick(symbol);
                 } else if (!eventData.e && eventData.u) {
                     // bookTicker doesn't have an "e" field but has "u" (updateId)
                     this.marketState.updateQuote(symbol, {
@@ -110,6 +114,15 @@ export class BinanceWS {
         this.ws.on('error', (err) => {
             console.error('Binance WS error:', err);
         });
+    }
+
+    private lastTradeTick: Map<string, number> = new Map();
+    private triggerTradeTick(symbol: string) {
+        const now = Date.now();
+        const last = this.lastTradeTick.get(symbol) || 0;
+        if (now - last < 500) return; // Max 2 ticks per second from trades
+        this.lastTradeTick.set(symbol, now);
+        TradingEngine.getInstance().onTick(symbol).catch(err => console.error(`Engine tick failed for ${symbol}:`, err));
     }
 
     private lastSync: Map<string, number> = new Map();

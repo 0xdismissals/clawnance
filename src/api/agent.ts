@@ -429,7 +429,30 @@ router.post('/positions/:symbol/risk', async (req: any, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
     if (!data || data.length === 0) return res.status(404).json({ error: 'Position not found' });
+
+    await TradingEngine.getInstance().syncPosition(data[0]);
+
     res.json(data[0]);
+});
+
+router.get('/memory', async (req: any, res) => {
+    const { action, symbol, limit } = req.query;
+    const pageSize = Math.min(parseInt(limit as string) || 100, 500);
+
+    let query = supabase
+        .from('ledger')
+        .select('*')
+        .eq('agent_id', req.agentId)
+        .order('created_at', { ascending: false })
+        .limit(pageSize);
+
+    if (action) query = query.eq('action', action);
+    if (symbol) query = query.eq('symbol', symbol);
+
+    const { data, error } = await query;
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
 });
 
 export default router;
